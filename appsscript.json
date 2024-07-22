@@ -1,0 +1,51 @@
+{
+    "timeZone": "America/New_York",
+    "exceptionLogging": "STACKDRIVER",
+    "runtimeVersion": "V8",
+    "dependencies": {
+      "enabledAdvancedServices": [
+        {
+          "userSymbol": "Gmail",
+          "serviceId": "gmail",
+          "version": "v1"
+        }
+      ]
+    },
+    "oauthScopes": [
+      "https://www.googleapis.com/auth/gmail.addons.execute",
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/script.external_request",
+      "https://www.googleapis.com/auth/tasks"
+    ],
+    "urlFetchWhitelist": [
+      "https://simple-gmail-tasks.onrender.com/",
+      "https://simple-gmail-tasks.onrender.com/api/tasks",
+      "https://simple-gmail-tasks.onrender.com/api/tasks/thread/"
+    ],
+    "gmail": {
+      "name": "Email Task Manager",
+      "logoUrl": "https://upload.wikimedia.org/wikipedia/commons/d/de/Google_Inbox_by_Gmail_logo.png",
+      "primaryColor": "#4285F4",
+      "secondaryColor": "#34A853",
+      "version": "TRUSTED_TESTER_V2",
+      "openLinkUrlPrefixes": [
+        "https://mail.google.com/"
+      ],
+      "universalActions": [
+        {
+          "text": "Open Task Inbox",
+          "runFunction": "createHomeCard"
+        }
+      ],
+      "contextualTriggers": [
+        {
+          "unconditional": {},
+          "onTriggerFunction": "displayMessageDetails"
+        }
+      ],
+      "homepageTrigger": {
+        "runFunction": "createHomeCard"
+      }
+    }
+  }
