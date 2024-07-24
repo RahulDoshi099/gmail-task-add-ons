@@ -1,9 +1,50 @@
 const API_BASE_URL = 'https://simple-gmail-tasks.onrender.com/api';
 
-function onHomepage(e) {
+// Entry point for the home page
+function getHomePage(e) {
   return createHomeCard();
 }
 
+// Fetch all tasks from the API
+function getTasks() {
+  try {
+    const response = UrlFetchApp.fetch(`${API_BASE_URL}/tasks`, {
+      method: 'get',
+      muteHttpExceptions: true
+    });
+    const result = JSON.parse(response.getContentText());
+    if (response.getResponseCode() === 200 && result.success) {
+      return result.tasks;
+    } else {
+      console.error('Error fetching tasks:', result.error || 'Unknown error');
+      return [];
+    }
+  } catch (error) {
+    console.error('Error in getTasks:', error);
+    return [];
+  }
+}
+
+// Fetch tasks by message ID
+function getTasksByMessageId(messageId) {
+  try {
+    const response = UrlFetchApp.fetch(`${API_BASE_URL}/tasks/thread/${messageId}`, {
+      muteHttpExceptions: true
+    });
+    const result = JSON.parse(response.getContentText());
+    if (response.getResponseCode() === 200 && result.success) {
+      return result.tasks;
+    } else {
+      console.error('Error fetching tasks by message ID:', result.error || result.message || 'Unknown error');
+      return [];
+    }
+  } catch (error) {
+    console.error('Error in getTasksByMessageId:', error);
+    return [];
+  }
+}
+
+// Create the home card to show all tasks
 function createHomeCard() {
   const tasks = getTasks();
   const card = CardService.newCardBuilder();
@@ -39,20 +80,19 @@ function createHomeCard() {
   return card.build();
 }
 
+// Save a new task to the inbox
 function saveToTaskInbox(e) {
-  const note = e.formInput.note;
-  const details = getMessageDetails(e);
-
-  if (!details) {
-    return CardService.newActionResponseBuilder()
-      .setNotification(CardService.newNotification().setText("Unable to save task. Message details not found."))
-      .build();
-  }
+  const threadId = e.parameters.threadId; // Get threadId from function argument
+  const emailTo = e.parameters.emailTo;  // Get emailTo from function argument
 
   const taskData = {
-    title: details.subject,
-    detail: note,
-    threadId: details.messageId // Send message ID as thread ID
+    title: e.formInput.title,
+    detail: e.formInput.detail,
+    threadId: threadId,
+    emailFrom: e.formInput.emailFrom,
+    emailTo: emailTo,
+    emailSubject: e.formInput.emailSubject,
+    emailBody: e.formInput.emailBody
   };
 
   try {
@@ -84,6 +124,9 @@ function saveToTaskInbox(e) {
   }
 }
 
+
+
+// Confirm task deletion
 function confirmDeleteTask(e) {
   const taskId = e.parameters.taskId;
 
@@ -95,13 +138,14 @@ function confirmDeleteTask(e) {
       .setOnClickAction(CardService.newAction().setFunctionName("deleteTask").setParameters({ taskId: taskId }))
     )
     .addWidget(CardService.newTextButton().setText("No")
-      .setOnClickAction(CardService.newAction().setFunctionName("onHomepage"))
+      .setOnClickAction(CardService.newAction().setFunctionName("getHomePage"))
     )
   );
 
   return card.build();
 }
 
+// Delete a task
 function deleteTask(e) {
   const taskId = e.parameters.taskId;
 
@@ -132,90 +176,48 @@ function deleteTask(e) {
   }
 }
 
-function getTasks() {
-  try {
-    const response = UrlFetchApp.fetch(`${API_BASE_URL}/tasks`, {
-      method: 'get',
-      muteHttpExceptions: true
-    });
-    const result = JSON.parse(response.getContentText());
-    if (response.getResponseCode() === 200 && result.success) {
-      return result.tasks;
-    } else {
-      console.error('Error fetching tasks:', result.error || 'Unknown error');
-      return [];
-    }
-  } catch (error) {
-    console.error('Error in getTasks:', error);
-    return [];
-  }
-}
-
-function getTasksByMessageId(messageId) {
-  try {
-    const response = UrlFetchApp.fetch(`${API_BASE_URL}/tasks/thread/${messageId}`, {
-      muteHttpExceptions: true
-    });
-    const result = JSON.parse(response.getContentText());
-    if (response.getResponseCode() === 200 && result.success) {
-      return result.tasks;
-    } else {
-      console.error('Error fetching tasks by message ID:', result.error || result.message || 'Unknown error');
-      return [];
-    }
-  } catch (error) {
-    console.error('Error in getTasksByMessageId:', error);
-    return [];
-  }
-}
-
+// Create or edit a task card
 function editTaskCard(e) {
   const taskId = e.parameters.taskId;
-  const threadId = e.parameters.threadId; // Get the thread ID from parameters
-  const tasks = getTasksByMessageId(threadId);
-  const task = tasks.find(t => t._id === taskId);
+  const threadId = e.parameters.threadId;
 
-  if (!task) {
+  // Fetch task details from the API
+  const response = UrlFetchApp.fetch(`${API_BASE_URL}/tasks/thread/${threadId}`, {
+    muteHttpExceptions: true
+  });
+
+  const result = JSON.parse(response.getContentText());
+
+  if (response.getResponseCode() === 200 && result.success) {
+    const task = result.tasks.find(t => t._id === taskId);
+
+    if (task) {
+      return createEditTaskCard(task);
+    } else {
+      return CardService.newCardBuilder()
+        .addSection(CardService.newCardSection()
+          .addWidget(CardService.newTextParagraph().setText('Task not found.')))
+        .build();
+    }
+  } else {
+    console.error('Error fetching task by thread ID:', result.error || 'Unknown error');
     return CardService.newCardBuilder()
       .addSection(CardService.newCardSection()
-        .addWidget(CardService.newTextParagraph().setText("Task not found.")))
+        .addWidget(CardService.newTextParagraph().setText('Error retrieving task details.')))
       .build();
   }
-
-  const emailDetails = getMessageDetailsById(threadId);
-
-  const card = CardService.newCardBuilder();
-  const section = CardService.newCardSection();
-
-  // Populate input fields with task details
-  section.addWidget(CardService.newTextInput().setFieldName('title').setTitle('Title').setValue(task.title || ''));
-  section.addWidget(CardService.newTextInput().setFieldName('detail').setTitle('Detail').setValue(task.detail || ''));
-  section.addWidget(CardService.newTextButton().setText('Update Task').setOnClickAction(CardService.newAction().setFunctionName('updateTask').setParameters({ taskId: taskId })));
-
-  if (emailDetails) {
-    section.addWidget(CardService.newTextParagraph().setText('From: ' + emailDetails.from));
-    section.addWidget(CardService.newTextParagraph().setText('To: ' + emailDetails.to));
-    section.addWidget(CardService.newTextParagraph().setText('Subject: ' + emailDetails.subject));
-
-    // Process and display HTML body content (limited HTML tags allowed)
-    const bodyText = formatBodyText(emailDetails.body);
-    console.log("bodyText",bodyText)
-    section.addWidget(CardService.newTextParagraph().setText('Body: ' + bodyText));
-  }
-
-  card.addSection(section);
-
-  return card.build();
 }
 
+
+// Update an existing task
 function updateTask(e) {
   const taskId = e.parameters.taskId;
-  const title = e.formInput.title;
-  const detail = e.formInput.detail;
-
   const taskData = {
-    title: title,
-    detail: detail
+    title: e.formInput.title,
+    detail: e.formInput.detail,
+    emailFrom: e.formInput.emailFrom,
+    emailSubject: e.formInput.emailSubject,
+    emailBody: e.formInput.emailBody
   };
 
   try {
@@ -247,9 +249,9 @@ function updateTask(e) {
   }
 }
 
+// Display message details and create or edit task
 function displayMessageDetails(e) {
   const details = getMessageDetails(e);
-  console.log("details.body---", details.body)
 
   if (!details) {
     return CardService.newCardBuilder()
@@ -261,150 +263,165 @@ function displayMessageDetails(e) {
   const tasks = getTasksByMessageId(details.messageId);
 
   const card = CardService.newCardBuilder();
-  const section = CardService.newCardSection();
 
-  // Display email details
-  section.addWidget(CardService.newTextParagraph().setText('From: ' + details.from));
-  section.addWidget(CardService.newTextParagraph().setText('To: ' + details.to));
-  section.addWidget(CardService.newTextParagraph().setText('Subject: ' + details.subject));
-  
-  // Process and display formatted HTML body content
-  const bodyText = formatBodyText(details.body);
-  section.addWidget(CardService.newTextParagraph().setText(bodyText));
-
-  // Add a note input field
-  section.addWidget(CardService.newTextInput().setFieldName('note').setTitle('Add a note'));
-  section.addWidget(CardService.newTextButton().setText('Save to Task Inbox').setOnClickAction(CardService.newAction().setFunctionName('saveToTaskInbox')));
-
-  card.addSection(section);
-
-  // Display tasks if available
   if (tasks.length > 0) {
-    tasks.forEach((task) => {
-      card.addSection(
-        CardService.newCardSection()
-          .addWidget(CardService.newKeyValue()
-            .setTopLabel(task.title)
-            .setContent(task.detail)
-            .setBottomLabel(new Date(task.createdAt).toLocaleString())
-          )
-          .addWidget(CardService.newTextButton()
-            .setText("Edit Task")
-            .setOnClickAction(CardService.newAction().setFunctionName("editTaskCard").setParameters({ taskId: task._id, threadId: task.threadId }))
-          )
-          .addWidget(CardService.newTextButton()
-            .setText("Delete Task")
-            .setOnClickAction(CardService.newAction().setFunctionName("confirmDeleteTask").setParameters({ taskId: task._id }))
-          )
+    // If tasks exist, show edit screen for the first task
+    const task = tasks[0];
+    return createEditTaskCard(task);
+  } else {
+    // If no tasks exist, show the create task screen with populated fields
+    const section = CardService.newCardSection()
+      .addWidget(CardService.newTextInput()
+        .setFieldName('title')
+        .setTitle('Title')
+        .setValue(details.subject || '') // Populate with email subject
+      )
+      .addWidget(CardService.newTextInput()
+        .setFieldName('emailFrom')
+        .setTitle('Email From')
+        .setValue(details.from || '') // Populate with email sender
+      )
+      .addWidget(CardService.newTextInput()
+        .setFieldName('emailSubject')
+        .setTitle('Email Subject')
+        .setValue(details.subject || '') // Populate with email subject
+      )
+      .addWidget(CardService.newTextInput()
+        .setFieldName('emailBody')
+        .setTitle('Email Body')
+        .setValue(details.body || '') // Populate with email body
+        .setMultiline(true)
+      )
+      .addWidget(CardService.newTextInput()
+        .setFieldName('detail')
+        .setTitle('Add details for task')
+        .setValue('') // Default to empty, user can add notes
+      )
+      .addWidget(CardService.newTextButton()
+        .setText('Save to Task Inbox')
+        .setOnClickAction(CardService.newAction().setFunctionName('saveToTaskInbox').setParameters({ threadId: details.messageId, emailTo: details.to }))
       );
-    });
+
+    card.addSection(section);
   }
 
   return card.build();
 }
 
-function getTasksByThreadId(threadId) {
-  try {
-    const response = UrlFetchApp.fetch(`${API_BASE_URL}/tasks/thread/${threadId}`, {
-      muteHttpExceptions: true
-    });
-    const result = JSON.parse(response.getContentText());
-    if (response.getResponseCode() === 200 && result.success) {
-      return result.tasks;
-    } else {
-      console.error('Error fetching tasks by thread ID:', result.error || result.message || 'Unknown error');
-      return [];
-    }
-  } catch (error) {
-    console.error('Error in getTasksByThreadId:', error);
-    return [];
-  }
+// Create or edit task card
+function createEditTaskCard(task) {
+  const card = CardService.newCardBuilder();
+  const section = CardService.newCardSection()
+    .addWidget(CardService.newTextInput()
+      .setFieldName('title')
+      .setTitle('Title')
+      .setValue(task.title || '')
+    )
+    .addWidget(CardService.newTextInput()
+      .setFieldName('detail')
+      .setTitle('Detail')
+      .setValue(task.detail || '')
+    )
+    .addWidget(CardService.newTextInput()
+      .setFieldName('emailFrom')
+      .setTitle('Email From')
+      .setValue(task.emailFrom || '')
+    )
+    .addWidget(CardService.newTextInput()
+      .setFieldName('emailSubject')
+      .setTitle('Email Subject')
+      .setValue(task.emailSubject || '')
+    )
+    .addWidget(CardService.newTextInput()
+      .setFieldName('emailBody')
+      .setTitle('Email Body')
+      .setValue(task.emailBody || '')
+      .setMultiline(true)
+    )
+    .addWidget(CardService.newTextButton()
+      .setText('Update Task')
+      .setOnClickAction(CardService.newAction().setFunctionName('updateTask').setParameters({ taskId: task._id }))
+    );
+
+  card.addSection(section);
+
+  return card.build();
 }
+
 
 function getMessageDetails(e) {
-  let messageId;
+  try {
+    const accessToken = e.messageMetadata.accessToken;
+    const messageId = e.messageMetadata.messageId;
+    const message = GmailApp.getMessageById(messageId);
+    const thread = message.getThread();
+    const from = message.getFrom();
+    const to = message.getTo();
+    const subject = message.getSubject();
+    const body = removeHttpLinks(message.getPlainBody()); // Remove HTTP links
+    const attachments = message.getAttachments().map(attachment => ({
+      name: attachment.getName(),
+      mimeType: attachment.getContentType(),
+      size: attachment.getSize()
+    }));
 
-  if (e && e.gmail && e.gmail.messageId) {
-    messageId = e.gmail.messageId;
-  } else {
-    const threads = GmailApp.getInboxThreads(0, 1);
-    if (threads && threads.length > 0) {
-      const messages = threads[0].getMessages();
-      if (messages && messages.length > 0) {
-        messageId = messages[0].getId();
-      }
+    const fullBody = message.getPlainBody();
+    Logger.log("fullBody: %s", fullBody);
+    Logger.log("filter - plainbody: %s", body);
+
+    return {
+      messageId: thread.getId(),
+      from: from,
+      to: to,
+      subject: subject,
+      body: body,
+      attachments: attachments
+    };
+  } catch (error) {
+    Logger.log('Error in getMessageDetails: %s', error.toString());
+  }
+}
+
+
+// Fetch message details by thread ID
+function getMessageDetailsById(threadId) {
+  try {
+    const thread = GmailApp.getThreadById(threadId);
+    const messages = thread.getMessages();
+
+    if (messages.length === 0) {
+      console.error('No messages found in the thread.');
+      return null;
     }
-  }
 
-  if (!messageId) {
-    console.error('No message ID found');
+    const message = messages[0]; // Assuming we want the details of the first message in the thread
+    const from = message.getFrom();
+    const to = message.getTo();
+    const subject = message.getSubject();
+    const body = removeHttpLinks(message.getPlainBody()); // Remove HTTP links
+
+    const attachments = message.getAttachments().map(attachment => ({
+      name: attachment.getName(),
+      mimeType: attachment.getContentType(),
+      size: attachment.getSize()
+    }));
+
+    return {
+      messageId: thread.getId(),
+      from: from,
+      to: to,
+      subject: subject,
+      body: body,
+      attachments: attachments
+    };
+  } catch (error) {
+    console.error('Error fetching message details by ID:', error);
     return null;
   }
-
-  const message = GmailApp.getMessageById(messageId);
-
-  if (!message) {
-    console.error('No message found with ID: ' + messageId);
-    return null;
-  }
-
-  return {
-    from: message.getFrom(),
-    to: message.getTo(),
-    subject: message.getSubject(),
-    body: message.getBody(), // Changed to getBody() to get HTML content
-    messageId: messageId
-  };
 }
 
-function getMessageDetailsById(messageId) {
-  if (!messageId) {
-    console.error('No message ID provided');
-    return null;
-  }
-
-  const message = GmailApp.getMessageById(messageId);
-  console.log("message -",message)
-
-  if (!message) {
-    console.error('No message found with ID: ' + messageId);
-    return null;
-  }
-
-  return {
-    from: message.getFrom(),
-    to: message.getTo(),
-    subject: message.getSubject(),
-    body: message.getBody(), // Changed to getBody() to get HTML content
-    messageId: messageId
-  };
-}
-
-// Utility function to format text from HTML content
-function formatBodyText(htmlContent) {
-  const tempElement = HtmlService.createHtmlOutput(htmlContent).getContent();
-  
-  // Remove inline CSS rules and non-content tags
-  const cleanedHtml = tempElement
-    .replace(/<style[^>]*>.*?<\/style>/g, '') // Remove <style> tags
-    .replace(/<script[^>]*>.*?<\/script>/g, '') // Remove <script> tags
-    .replace(/@media[^{]+\{([\s\S]+?)\}[^\}]*\}/g, '') // Remove media queries
-    .replace(/body\s*\{[^}]*\}/g, '') // Remove body CSS rules
-  
-  // Decode HTML entities and replace paragraph tags with newlines
-  const formattedText = cleanedHtml
-    .replace(/<\/p>/g, '\n\n')
-    .replace(/<[^>]+>/g, '') // Remove all other HTML tags
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>');
-
-  // Remove excessive whitespace and repetitive text
-  const cleanedText = formattedText
-    .replace(/\s+/g, ' ') // Replace multiple spaces with a single space
-    .trim();
-
-  return cleanedText;
+// Remove HTTP links from text
+function removeHttpLinks(text) {
+  const urlPattern = /https?:\/\/[^\s]+/g;
+  return text.replace(urlPattern, '');
 }
