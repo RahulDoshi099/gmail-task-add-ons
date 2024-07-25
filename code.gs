@@ -124,8 +124,6 @@ function saveToTaskInbox(e) {
   }
 }
 
-
-
 // Confirm task deletion
 function confirmDeleteTask(e) {
   const taskId = e.parameters.taskId;
@@ -208,7 +206,6 @@ function editTaskCard(e) {
   }
 }
 
-
 // Update an existing task
 function updateTask(e) {
   const taskId = e.parameters.taskId;
@@ -269,43 +266,61 @@ function displayMessageDetails(e) {
     const task = tasks[0];
     return createEditTaskCard(task);
   } else {
-    // If no tasks exist, show the create task screen with populated fields
+    // Show a Create Task button initially
     const section = CardService.newCardSection()
-      .addWidget(CardService.newTextInput()
-        .setFieldName('title')
-        .setTitle('Title')
-        .setValue(details.subject || '') // Populate with email subject
-      )
-      .addWidget(CardService.newTextInput()
-        .setFieldName('emailFrom')
-        .setTitle('Email From')
-        .setValue(details.from || '') // Populate with email sender
-      )
-      .addWidget(CardService.newTextInput()
-        .setFieldName('emailSubject')
-        .setTitle('Email Subject')
-        .setValue(details.subject || '') // Populate with email subject
-      )
-      .addWidget(CardService.newTextInput()
-        .setFieldName('emailBody')
-        .setTitle('Email Body')
-        .setValue(details.body || '') // Populate with email body
-        .setMultiline(true)
-      )
-      .addWidget(CardService.newTextInput()
-        .setFieldName('detail')
-        .setTitle('Add details for task')
-        .setValue('') // Default to empty, user can add notes
-      )
       .addWidget(CardService.newTextButton()
-        .setText('Save to Task Inbox')
-        .setOnClickAction(CardService.newAction().setFunctionName('saveToTaskInbox').setParameters({ threadId: details.messageId, emailTo: details.to }))
+        .setText('Create Task')
+        .setOnClickAction(CardService.newAction().setFunctionName('showCreateTaskForm').setParameters({ messageId: details.messageId }))
       );
 
     card.addSection(section);
   }
 
   return card.build();
+}
+
+// Function to display the task creation form
+function showCreateTaskForm(e) {
+  const messageId = e.parameters.messageId;
+  const details = getMessageDetailsById(messageId);
+
+  const section = CardService.newCardSection()
+    .addWidget(CardService.newTextInput()
+      .setFieldName('title')
+      .setTitle('Title')
+      .setValue(details.subject || '') // Populate with email subject
+    )
+    .addWidget(CardService.newTextInput()
+      .setFieldName('emailFrom')
+      .setTitle('Email From')
+      .setValue(details.from || '') // Populate with email sender
+    )
+    .addWidget(CardService.newTextInput()
+      .setFieldName('emailSubject')
+      .setTitle('Email Subject')
+      .setValue(details.subject || '') // Populate with email subject
+    )
+    .addWidget(CardService.newTextInput()
+      .setFieldName('emailBody')
+      .setTitle('Email Body')
+      .setValue(details.body || '') // Populate with email body
+      .setMultiline(true)
+    )
+    .addWidget(CardService.newTextInput()
+      .setFieldName('detail')
+      .setTitle('Add details for task')
+      .setValue('') // Default to empty, user can add notes
+    )
+    .addWidget(CardService.newTextButton()
+      .setText('Save to Task Inbox')
+      .setOnClickAction(CardService.newAction().setFunctionName('saveToTaskInbox').setParameters({ threadId: messageId, emailTo: details.to }))
+    );
+
+  const card = CardService.newCardBuilder()
+    .addSection(section)
+    .build();
+
+  return card;
 }
 
 // Create or edit task card
@@ -348,7 +363,6 @@ function createEditTaskCard(task) {
   return card.build();
 }
 
-
 function getMessageDetails(e) {
   try {
     const accessToken = e.messageMetadata.accessToken;
@@ -381,7 +395,6 @@ function getMessageDetails(e) {
     Logger.log('Error in getMessageDetails: %s', error.toString());
   }
 }
-
 
 // Fetch message details by thread ID
 function getMessageDetailsById(threadId) {
